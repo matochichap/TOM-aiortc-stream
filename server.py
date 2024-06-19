@@ -78,7 +78,8 @@ class VideoTransformTrack(MediaStreamTrack):
             # rotate image
             img = frame.to_ndarray(format="bgr24")
             rows, cols, _ = img.shape
-            M = cv2.getRotationMatrix2D((cols / 2, rows / 2), frame.time * 45, 1)
+            M = cv2.getRotationMatrix2D(
+                (cols / 2, rows / 2), frame.time * 45, 1)
             img = cv2.warpAffine(img, M, (cols, rows))
 
             # rebuild a VideoFrame, preserving timing information
@@ -181,7 +182,7 @@ async def on_shutdown(app):
 
 # ===
 async def connect_to_websocket():
-    print("connect_to_websocket")
+    print("Connecting to websocket...")
     uri = "ws://127.0.0.1:5011/ws?type=w&uid=1&token=1234567890"
     async with websockets.connect(uri) as websocket:
         # Send a message
@@ -199,7 +200,7 @@ if __name__ == "__main__":
     parser.add_argument("--cert-file", help="SSL certificate file (for HTTPS)")
     parser.add_argument("--key-file", help="SSL key file (for HTTPS)")
     parser.add_argument(
-        "--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)"
+        "--host", default="127.0.0.1", help="Host for HTTP server (default: 127.0.0.1)"
     )
     parser.add_argument(
         "--port", type=int, default=8080, help="Port for HTTP server (default: 8080)"

@@ -92,7 +92,7 @@ class VideoTransformTrack(MediaStreamTrack):
 
 
 async def index(request):
-    await connect_to_websocket() #
+    await connect_to_websocket()
     content = open(os.path.join(ROOT, "index.html"), "r").read()
     return web.Response(content_type="text/html", text=content)
 
@@ -184,13 +184,12 @@ async def on_shutdown(app):
 async def connect_to_websocket():
     print("Connecting to websocket...")
     uri = "ws://127.0.0.1:5011/ws?type=w&uid=1&token=1234567890"
-    async with websockets.connect(uri) as websocket:
-        # Send a message
-        await websocket.send("Hello, WebSocket server!")
-
-        # Receive a message
-        response = await websocket.recv()
-        print(f"Received message: {response}")
+    websocket = await websockets.connect(uri)
+    # send message
+    await websocket.send("Hello, WebSocket server!")
+    response = await websocket.recv()
+    # receive message
+    print(f"Received message: {response}")
 # ^^^
 
 if __name__ == "__main__":

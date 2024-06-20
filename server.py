@@ -22,7 +22,7 @@ relay = MediaRelay()
 
 class VideoTransformTrack(MediaStreamTrack):
     """
-    A video stream track that transforms frames from an another track.
+    A video stream track that transforms frames from another track.
     """
 
     kind = "video"
@@ -101,9 +101,7 @@ async def javascript(request):
     return web.Response(content_type="application/javascript", text=content)
 
 
-async def offer(request):
-    await connect_to_websocket()
-    params = await request.json()
+async def handle_offer(params):
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
     pc = RTCPeerConnection()
@@ -113,7 +111,7 @@ async def offer(request):
     def log_info(msg, *args):
         logger.info(pc_id + " " + msg, *args)
 
-    log_info("Created for %s", request.remote)
+    log_info("Created for WebSocket client")
 
     # prepare local media
     player = MediaPlayer(os.path.join(ROOT, "demo-instruct.wav"))
@@ -165,11 +163,7 @@ async def offer(request):
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
 
-    return web.Response(
-        content_type="application/json",
-        text=json.dumps({"sdp": pc.localDescription.sdp,
-                        "type": pc.localDescription.type}),
-    )
+    return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
 
 
 async def on_shutdown(app):
@@ -179,15 +173,28 @@ async def on_shutdown(app):
     pcs.clear()
 
 
-# ===
-async def connect_to_websocket():
-    print("Connecting to websocket...")
+async def websocket_handler(app):
     uri = "ws://127.0.0.1:5011/ws?type=w&uid=1&token=1234567890"
     async with websockets.connect(uri) as websocket:
+        print("Connected to WebSocket server")
         await websocket.send("Hello, WebSocket server!")
-        response = await websocket.recv()
-        print(f"Received message: {response}")
-# ^^^
+        while True:
+            message = await websocket.recv()
+            print(f"Received message: {message}")
+            # data = json.loads(message)
+            # if data["type"] == "offer":
+            #     response = await handle_offer(data)
+            #     await websocket.send(json.dumps(response))
+
+
+async def start_background_tasks(app):
+    app['websocket_task'] = app.loop.create_task(websocket_handler(app))
+
+
+async def cleanup_background_tasks(app):
+    app['websocket_task'].cancel()
+    await app['websocket_task']
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -217,6 +224,9 @@ if __name__ == "__main__":
     app.on_shutdown.append(on_shutdown)
     app.router.add_get("/", index)
     app.router.add_get("/client.js", javascript)
-    app.router.add_post("/offer", offer)
+
+    app.on_startup.append(start_background_tasks)
+    app.on_cleanup.append(cleanup_background_tasks)
+
     web.run_app(app, access_log=None, host=args.host,
                 port=args.port, ssl_context=ssl_context)

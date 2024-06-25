@@ -18,11 +18,12 @@ ROOT = os.path.dirname(__file__)
 logger = logging.getLogger("pc")
 pcs = set()
 relay = MediaRelay()
+websocket = None
 
 
 class VideoTransformTrack(MediaStreamTrack):
     """
-    A video stream track that transforms frames from another track.
+    A video stream track that transforms frames from an another track.
     """
 
     kind = "video"
@@ -92,6 +93,9 @@ class VideoTransformTrack(MediaStreamTrack):
 
 
 async def index(request):
+    global websocket
+    uri = "ws://127.0.0.1:5011/ws?type=w&uid=1&token=1234567890"
+    websocket = await websockets.connect(uri)
     content = open(os.path.join(ROOT, "index.html"), "r").read()
     return web.Response(content_type="text/html", text=content)
 
@@ -101,8 +105,12 @@ async def javascript(request):
     return web.Response(content_type="application/javascript", text=content)
 
 
-async def handle_offer(params):
-    offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+async def offer(request):
+    global websocket
+    params = await request.json()
+    # create offer
+    offer = "offer~" + params["sdp"]
+    await websocket.send(offer)
 
     pc = RTCPeerConnection()
     pc_id = "PeerConnection(%s)" % uuid.uuid4()
@@ -111,7 +119,7 @@ async def handle_offer(params):
     def log_info(msg, *args):
         logger.info(pc_id + " " + msg, *args)
 
-    log_info("Created for WebSocket client")
+    log_info("Created for %s", request.remote)
 
     # prepare local media
     player = MediaPlayer(os.path.join(ROOT, "demo-instruct.wav"))
@@ -155,15 +163,26 @@ async def handle_offer(params):
             log_info("Track %s ended", track.kind)
             await recorder.stop()
 
-    # handle offer
-    await pc.setRemoteDescription(offer)
+    offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+    await pc.setLocalDescription(offer)
+
+    print("Waiting for answer")
+    answer = await websocket.recv()
+    print(answer)
+
+    # handle answer
+    sdp_type, sdp = answer.split("~")
+    # sdp = sdp.replace("a=setup:active", "a=setup:actpass")
+    answer = RTCSessionDescription(sdp=sdp, type=sdp_type)
+    await pc.setRemoteDescription(answer)
     await recorder.start()
 
-    # send answer
-    answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-
-    return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+    return web.Response(
+        content_type="application/json",
+        text=json.dumps(
+            {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+        ),
+    )
 
 
 async def on_shutdown(app):
@@ -173,38 +192,18 @@ async def on_shutdown(app):
     pcs.clear()
 
 
-async def websocket_handler(app):
-    uri = "ws://127.0.0.1:5011/ws?type=w&uid=1&token=1234567890"
-    async with websockets.connect(uri) as websocket:
-        print("Connected to WebSocket server")
-        await websocket.send("Hello, WebSocket server!")
-        while True:
-            message = await websocket.recv()
-            print(f"Received message: {message}")
-            # data = json.loads(message)
-            # if data["type"] == "offer":
-            #     response = await handle_offer(data)
-            #     await websocket.send(json.dumps(response))
-
-
-async def start_background_tasks(app):
-    app['websocket_task'] = app.loop.create_task(websocket_handler(app))
-
-
-async def cleanup_background_tasks(app):
-    app['websocket_task'].cancel()
-    await app['websocket_task']
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="WebRTC audio / video / data-channels demo")
+        description="WebRTC audio / video / data-channels demo"
+    )
     parser.add_argument("--cert-file", help="SSL certificate file (for HTTPS)")
     parser.add_argument("--key-file", help="SSL key file (for HTTPS)")
-    parser.add_argument("--host", default="127.0.0.1",
-                        help="Host for HTTP server (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8080,
-                        help="Port for HTTP server (default: 8080)")
+    parser.add_argument(
+        "--host", default="127.0.0.1", help="Host for HTTP server (default: 127.0.0.1)"
+    )
+    parser.add_argument(
+        "--port", type=int, default=8080, help="Port for HTTP server (default: 8080)"
+    )
     parser.add_argument("--record-to", help="Write received media to a file.")
     parser.add_argument("--verbose", "-v", action="count")
     args = parser.parse_args()
@@ -224,9 +223,7 @@ if __name__ == "__main__":
     app.on_shutdown.append(on_shutdown)
     app.router.add_get("/", index)
     app.router.add_get("/client.js", javascript)
-
-    app.on_startup.append(start_background_tasks)
-    app.on_cleanup.append(cleanup_background_tasks)
-
-    web.run_app(app, access_log=None, host=args.host,
-                port=args.port, ssl_context=ssl_context)
+    app.router.add_post("/offer", offer)
+    web.run_app(
+        app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
+    )

@@ -1,6 +1,7 @@
 import asyncio
 import websockets
 from urllib.parse import urlparse, parse_qs
+from event import Event
 
 IP_ADDRESS = "127.0.0.1"
 PORT = 5011
@@ -8,6 +9,10 @@ PORT = 5011
 map_unity_users = {}
 map_web_users = {}
 id_counter = 0
+
+# 1. Start all Python Server, Websocket Server, Unity Client
+# 2. Press Call on Unity Client
+# 3. Press Start on Python Server
 
 
 async def handle_connection(websocket, path):
@@ -33,23 +38,34 @@ async def handle_connection(websocket, path):
 
     print('usertype: ', usertype)
     print('accesstoken: ', accesstoken)
-
-    await websocket.send("Connected!")
-
     try:
-        async for message in websocket:
-            print(f'received: {message}')
-            if is_unity_user:
-                # Send to web users
-                for ws in map_web_users.values():
-                    await ws.send(message)
-            else:
-                # Send to unity users
+        print("Waiting for message...")
+        message = await websocket.recv()
+        print(f'Received: {message}')
+        if is_unity_user:
+            # Send to web users
+            for ws in map_web_users.values():
+                await ws.send(message)
+
+                # Wait for response to send back to unity users
+                response = await websocket.recv()
                 for ws in map_unity_users.values():
-                    await ws.send(message)
+                    print("Sending to unity users...")
+                    await ws.send(response)
+                    print("Sent to unity users")
+        else:
+            # Send to unity users
+            for ws in map_unity_users.values():
+                await ws.send(message)
+
+                # Wait for response to send back to web users
+                response = await websocket.recv()
+                for ws in map_web_users.values():
+                    print("Sending to web users...")
+                    await ws.send(response)
+                    print("Sent to web users")
     except websockets.ConnectionClosed:
         print(f"Connection closed for user {user_id_with_id}")
-    finally:
         if is_unity_user:
             del map_unity_users[user_id_with_id]
         else:

@@ -164,7 +164,7 @@ async def offer(request):
             await recorder.stop()
 
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
-    await pc.setLocalDescription(offer)
+    await pc.setRemoteDescription(offer)
 
     print("Waiting for answer")
     answer = await websocket.recv()
@@ -174,7 +174,7 @@ async def offer(request):
     sdp_type, sdp = answer.split("~")
     # sdp = sdp.replace("a=setup:active", "a=setup:actpass")
     answer = RTCSessionDescription(sdp=sdp, type=sdp_type)
-    await pc.setRemoteDescription(answer)
+    await pc.setLocalDescription(answer)
     await recorder.start()
 
     return web.Response(

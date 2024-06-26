@@ -47,10 +47,12 @@ async def handle_connection(websocket, path):
                 # Send to web users
                 for ws in map_web_users.values():
                     await ws.send(message)
+                    print("Sent to web users")
             else:
                 # Send to unity users
                 for ws in map_unity_users.values():
                     await ws.send(message)
+                    print("Sent to unity users")
         except websockets.ConnectionClosed:
             print(f"Connection closed for user {user_id_with_id}")
             if is_unity_user:

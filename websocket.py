@@ -38,38 +38,26 @@ async def handle_connection(websocket, path):
 
     print('usertype: ', usertype)
     print('accesstoken: ', accesstoken)
-    try:
-        print("Waiting for message...")
-        message = await websocket.recv()
-        print(f'Received: {message}')
-        if is_unity_user:
-            # Send to web users
-            for ws in map_web_users.values():
-                await ws.send(message)
-
-                # Wait for response to send back to unity users
-                response = await websocket.recv()
-                for ws in map_unity_users.values():
-                    print("Sending to unity users...")
-                    await ws.send(response)
-                    print("Sent to unity users")
-        else:
-            # Send to unity users
-            for ws in map_unity_users.values():
-                await ws.send(message)
-
-                # Wait for response to send back to web users
-                response = await websocket.recv()
+    while True:
+        try:
+            print("Waiting for message...")
+            message = await websocket.recv()
+            print(f'Received: {message}')
+            if is_unity_user:
+                # Send to web users
                 for ws in map_web_users.values():
-                    print("Sending to web users...")
-                    await ws.send(response)
-                    print("Sent to web users")
-    except websockets.ConnectionClosed:
-        print(f"Connection closed for user {user_id_with_id}")
-        if is_unity_user:
-            del map_unity_users[user_id_with_id]
-        else:
-            del map_web_users[user_id_with_id]
+                    await ws.send(message)
+            else:
+                # Send to unity users
+                for ws in map_unity_users.values():
+                    await ws.send(message)
+        except websockets.ConnectionClosed:
+            print(f"Connection closed for user {user_id_with_id}")
+            if is_unity_user:
+                del map_unity_users[user_id_with_id]
+            else:
+                del map_web_users[user_id_with_id]
+            break
 
 
 async def main():

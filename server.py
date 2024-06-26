@@ -9,7 +9,7 @@ import websockets
 
 import cv2
 from aiohttp import web
-from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
+from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
 from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder, MediaRelay
 from av import VideoFrame
 
@@ -172,10 +172,20 @@ async def offer(request):
 
     # handle answer
     sdp_type, sdp = answer.split("~")
-    # sdp = sdp.replace("a=setup:active", "a=setup:actpass")
     answer = RTCSessionDescription(sdp=sdp, type=sdp_type)
     await pc.setLocalDescription(answer)
     await recorder.start()
+
+    # handle candidate
+    candidate = await websocket.recv()
+    print("received candidate")
+    print(candidate)
+    sdp_type, candidate, sdp_mid, sdp_mline_index = candidate.split("~")
+    foundation, component, protocol, priority, ip, port, _, _type = candidate.split()[
+        :8]
+    candidate = RTCIceCandidate(foundation=foundation, component=component, protocol=protocol,
+                                priority=priority, ip=ip, port=port, type=_type, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
+    await pc.addIceCandidate(candidate)
 
     return web.Response(
         content_type="application/json",

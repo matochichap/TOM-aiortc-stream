@@ -6,10 +6,11 @@ import os
 import ssl
 import uuid
 import websockets
+import platform
 
 import cv2
 from aiohttp import web
-from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
+from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, RTCRtpSender
 from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder, MediaRelay
 from av import VideoFrame
 
@@ -17,8 +18,68 @@ ROOT = os.path.dirname(__file__)
 
 logger = logging.getLogger("pc")
 pcs = set()
-relay = MediaRelay()
 websocket = None
+relay = None
+webcam = None
+
+
+def add_media_tracks(pc):
+    def create_local_tracks(play_from, decode):
+        global relay, webcam
+
+        if play_from:
+            player = MediaPlayer(play_from, decode=decode)
+            return player.audio, player.video
+        else:
+            options = {"framerate": "30", "video_size": "640x480"}
+            if relay is None:
+                if platform.system() == "Darwin":
+                    webcam = MediaPlayer(
+                        "default:none", format="avfoundation", options=options
+                    )
+                elif platform.system() == "Windows":
+                    options["pixel_format"] = "yuyv422"
+                    webcam = MediaPlayer(
+                        "video=Webcam", format="dshow", options=options
+                    )
+                # "C:\Users\ruiji\Downloads\big_buck_bunny_720p_1mb.mp4", format="dshow", options=options
+                # "C:/Users/ruiji/Downloads/big_buck_bunny_720p_1mb.mp4", options=options
+                else:
+                    webcam = MediaPlayer(
+                        "/dev/video0", format="v4l2", options=options)
+                relay = MediaRelay()
+            return None, relay.subscribe(webcam.video)
+
+    def force_codec(pc, sender, forced_codec):
+        kind = forced_codec.split("/")[0]
+        codecs = RTCRtpSender.getCapabilities(kind).codecs
+        transceiver = next(t for t in pc.getTransceivers()
+                           if t.sender == sender)
+        transceiver.setCodecPreferences(
+            [codec for codec in codecs if codec.mimeType == forced_codec]
+        )
+
+    # open media source
+    audio, video = create_local_tracks(
+        args.play_from, decode=not args.play_without_decoding
+    )
+
+    if audio:
+        audio_sender = pc.addTrack(audio)
+        if args.audio_codec:
+            force_codec(pc, audio_sender, args.audio_codec)
+        elif args.play_without_decoding:
+            raise Exception(
+                "You must specify the audio codec using --audio-codec")
+
+    if video:
+        video_sender = pc.addTrack(video)
+        if args.video_codec:
+            force_codec(pc, video_sender, args.video_codec)
+        elif args.play_without_decoding:
+            raise Exception(
+                "You must specify the video codec using --video-codec")
+    return pc
 
 
 class VideoTransformTrack(MediaStreamTrack):
@@ -107,19 +168,25 @@ async def javascript(request):
 
 async def offer(request):
     global websocket
-    params = await request.json()
-    # create offer
-    offer = "offer~" + params["sdp"]
-    await websocket.send(offer)
+    # params = await request.json()
+    # # create offer
+    # offer = "offer~" + params["sdp"]
+    # await websocket.send(offer)
 
     pc = RTCPeerConnection()
+    print("Created peer connection")
+    pc = add_media_tracks(pc)
+    print("Added media tracks")
+    offer = await pc.createOffer()
+    await pc.setLocalDescription(offer)
+    await websocket.send("offer~" + pc.localDescription.sdp)
     pc_id = "PeerConnection(%s)" % uuid.uuid4()
     pcs.add(pc)
 
     def log_info(msg, *args):
         logger.info(pc_id + " " + msg, *args)
 
-    log_info("Created for %s", request.remote)
+    # log_info("Created for %s", request.remote)
 
     # prepare local media
     player = MediaPlayer(os.path.join(ROOT, "demo-instruct.wav"))
@@ -152,7 +219,8 @@ async def offer(request):
         elif track.kind == "video":
             pc.addTrack(
                 VideoTransformTrack(
-                    relay.subscribe(track), transform=params["video_transform"]
+                    relay.subscribe(track)
+                    # relay.subscribe(track), transform=params["video_transform"]
                 )
             )
             if args.record_to:
@@ -163,8 +231,16 @@ async def offer(request):
             log_info("Track %s ended", track.kind)
             await recorder.stop()
 
-    offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
-    await pc.setRemoteDescription(offer)
+    @pc.on("icecandidate")
+    async def on_icecandidate(candidate):
+        print("on_icecandidate")
+        if candidate:
+            candidate = candidate.to_sdp()
+            candidate = "candidate~" + candidate
+            await websocket.send(candidate)
+
+    # offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+    # await pc.setRemoteDescription(offer)
 
     print("Waiting for answer")
     answer = await websocket.recv()
@@ -173,7 +249,7 @@ async def offer(request):
     # handle answer
     sdp_type, sdp = answer.split("~")
     answer = RTCSessionDescription(sdp=sdp, type=sdp_type)
-    await pc.setLocalDescription(answer)
+    await pc.setRemoteDescription(answer)
     await recorder.start()
 
     # handle candidate
@@ -193,6 +269,14 @@ async def offer(request):
             {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
         ),
     )
+
+
+async def send(request):
+    global websocket
+    params = await request.json()
+    message = params["message"]
+    await websocket.send(message)
+    print("Sent message: " + message)
 
 
 async def on_shutdown(app):
@@ -217,6 +301,10 @@ if __name__ == "__main__":
     parser.add_argument("--record-to", help="Write received media to a file.")
     parser.add_argument("--verbose", "-v", action="count")
     args = parser.parse_args()
+    args.play_from = None
+    args.play_without_decoding = False
+    args.audio_codec = None
+    args.video_codec = None
 
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
@@ -233,7 +321,8 @@ if __name__ == "__main__":
     app.on_shutdown.append(on_shutdown)
     app.router.add_get("/", index)
     app.router.add_get("/client.js", javascript)
-    app.router.add_post("/offer", offer)
+    app.router.add_get("/offer", offer)
+    app.router.add_post("/send", send)
     web.run_app(
         app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
     )

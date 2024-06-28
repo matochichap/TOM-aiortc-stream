@@ -45,6 +45,29 @@ function createPeerConnection() {
             document.getElementById('audio').srcObject = evt.streams[0];
     });
 
+    pc.addEventListener("icegatheringstatechange", (ev) => {
+        console.log("ice gathering state change");
+        console.log(pc.iceGatheringState);
+    });
+
+    pc.onicecandidate = e => {
+        if (e.candidate) {
+            const message = "candidate~" + e.candidate.candidate + "~" + e.candidate.sdpMid + "~" + e.candidate.sdpMLineIndex;
+            return fetch('/send', {
+                body: JSON.stringify({
+                    message: message
+                }),
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                method: 'POST'
+            });
+        }
+        else {
+            return "candidatenull";
+        }
+    };
+
     return pc;
 }
 

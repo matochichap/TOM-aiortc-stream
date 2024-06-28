@@ -8,7 +8,7 @@ import ssl
 import websockets
 
 from aiohttp import web
-from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
 from aiortc.contrib.media import MediaPlayer, MediaRelay
 from aiortc.rtcrtpsender import RTCRtpSender
 
@@ -18,6 +18,8 @@ ROOT = os.path.dirname(__file__)
 relay = None
 webcam = None
 websocket = None
+audio = None
+video = None
 
 
 def create_local_tracks(play_from, decode):
@@ -35,12 +37,12 @@ def create_local_tracks(play_from, decode):
                     "default:none", format="avfoundation", options=options
                 )
             elif platform.system() == "Windows":
+                video_src = "FHD Webcam"
+                # video_src = "Webcam"
                 options["pixel_format"] = "yuyv422"
                 webcam = MediaPlayer(
-                    "video=Webcam", format="dshow", options=options
+                    f"video={video_src}", format="dshow", options=options
                 )
-            # "C:\Users\ruiji\Downloads\big_buck_bunny_720p_1mb.mp4", format="dshow", options=options
-            # "C:/Users/ruiji/Downloads/big_buck_bunny_720p_1mb.mp4", options=options
             else:
                 webcam = MediaPlayer(
                     "/dev/video0", format="v4l2", options=options)
@@ -57,20 +59,45 @@ def force_codec(pc, sender, forced_codec):
     )
 
 
+async def consume_signaling(pc, websocket):
+    while True:
+        message = await websocket.recv()
+        print("Received:", message)
+        sdp_type, sdp = message.split("~")[:2]
+        if sdp_type == "offer":
+            offer = RTCSessionDescription(sdp=sdp, type=sdp_type)
+            await pc.setRemoteDescription(offer)
+            answer = await pc.createAnswer()
+            await pc.setLocalDescription(answer)
+            answer = answer.type + "~" + answer.sdp
+            await websocket.send(answer)
+        elif sdp_type == "answer":
+            sdp = RTCSessionDescription(sdp=sdp, type=sdp_type)
+            await pc.setRemoteDescription(sdp)
+        elif sdp_type == "candidate":
+            sdp_type, candidate, sdp_mid, sdp_mline_index = message.split("~")
+            foundation, component, protocol, priority, ip, port, _, _type = candidate.split()[
+                :8]
+            candidate = RTCIceCandidate(foundation=foundation, component=component, protocol=protocol,
+                                        priority=priority, ip=ip, port=port, type=_type, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
+            await pc.addIceCandidate(candidate)
+
+
 async def index(request):
     global websocket
     uri = "ws://127.0.0.1:5011/ws?type=w&uid=1&token=1234567890"
     websocket = await websockets.connect(uri)
-    content = open(os.path.join(ROOT, "index.html"), "r").read()
+    content = open(os.path.join(ROOT, "webcam.html"), "r").read()
     return web.Response(content_type="text/html", text=content)
 
 
 async def javascript(request):
-    content = open(os.path.join(ROOT, "client.js"), "r").read()
+    content = open(os.path.join(ROOT, "webcam.js"), "r").read()
     return web.Response(content_type="application/javascript", text=content)
 
 
 async def offer(request):
+    global audio, video
     # params = await request.json()
     # offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
@@ -119,24 +146,14 @@ async def offer(request):
     await pc.setLocalDescription(offer)
     offer = offer.type + "~" + offer.sdp
     await websocket.send(offer)
-    print(offer)
 
-    # handle answer
-    answer = await websocket.recv()
-    sdp_type, sdp = answer.split("~")
-    answer = RTCSessionDescription(sdp=sdp, type=sdp_type)
-    await pc.setRemoteDescription(answer)
-
-    # await pc.setRemoteDescription(offer)
-
-    # answer = await pc.createAnswer()
-    # await pc.setLocalDescription(answer)
+    asyncio.create_task(consume_signaling(pc, websocket))
 
     return web.Response(
         content_type="application/json",
-        text=json.dumps(
-            {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
-        ),
+        # text=json.dumps(
+        #     {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+        # ),
     )
 
 
@@ -179,7 +196,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    print(args)
+    # print(args)
 
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
@@ -195,6 +212,6 @@ if __name__ == "__main__":
     app = web.Application()
     app.on_shutdown.append(on_shutdown)
     app.router.add_get("/", index)
-    app.router.add_get("/client.js", javascript)
+    app.router.add_get("/webcam.js", javascript)
     app.router.add_post("/offer", offer)
     web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_context)

@@ -1,7 +1,6 @@
 import asyncio
 import websockets
 from urllib.parse import urlparse, parse_qs
-from event import Event
 
 IP_ADDRESS = "127.0.0.1"
 PORT = 5011

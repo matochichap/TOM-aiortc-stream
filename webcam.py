@@ -8,7 +8,7 @@ import ssl
 import websockets
 
 from aiohttp import web
-from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, RTCConfiguration, RTCIceServer
 from aiortc.contrib.media import MediaPlayer, MediaRelay
 from aiortc.rtcrtpsender import RTCRtpSender
 
@@ -82,7 +82,6 @@ async def consume_signaling(pc, websocket):
                                         priority=priority, ip=ip, port=port, type=_type, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
             await pc.addIceCandidate(candidate)
 
-
 async def index(request):
     global websocket
     uri = "ws://127.0.0.1:5011/ws?type=w&uid=1&token=1234567890"
@@ -101,24 +100,43 @@ async def offer(request):
     # params = await request.json()
     # offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
-    pc = RTCPeerConnection()
+    config = RTCConfiguration()
+    server = RTCIceServer(urls=["stun:stun.l.google.com:19302"])
+    config.iceServers = [server]
+    pc = RTCPeerConnection(configuration=config)
     pcs.add(pc)
+
+    @pc.on("track")
+    async def on_track(track):
+        print("STATE: track")
+        print(f"TRACK RECEIVED : {track}")
+        print(f"TRACK KIND : {track.kind}")
+
+    @pc.on("signalingstatechange")
+    async def on_signalingstatechange():
+        print("STATE: signalingstatechange")
+        print(f"Signaling state : {pc.signalingState}")
+
+    @pc.on('iceconnectionstatechange')
+    async def on_iceconnectionstatechange():
+        print("STATE: iceconnectionstatechange")
+        print(f"ICE connection state : {pc.iceConnectionState}")
 
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
-        print("Connection state is %s" % pc.connectionState)
+        print("STATE: connectionstatechange")
+        print(f"Connection state : {pc.connectionState}")
         if pc.connectionState == "failed":
             await pc.close()
             pcs.discard(pc)
 
-    @pc.on("icecandidate")
-    async def on_icecandidate(candidate):
-        print("icecandidate event")
-        print(candidate)
-        if candidate:
-            candidate = candidate.to_sdp()
-            candidate = "candidate~" + candidate
-            await websocket.send(candidate)
+    @pc.on("icegatheringstatechange")
+    async def on_icegatheringstatechange():
+        print("STATE: icegatheringstatechange")
+        print(f"Ice gathering state : {pc.iceGatheringState}")
+
+    pc.addTransceiver("audio")
+    pc.addTransceiver("video")
 
     # open media source
     audio, video = create_local_tracks(
@@ -140,14 +158,15 @@ async def offer(request):
         elif args.play_without_decoding:
             raise Exception(
                 "You must specify the video codec using --video-codec")
-
+    
     # send offer
     offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
-    offer = offer.type + "~" + offer.sdp
+    # offer = offer.type + "~" + offer.sdp
+    offer = pc.localDescription.type + "~" + pc.localDescription.sdp
     await websocket.send(offer)
 
-    asyncio.create_task(consume_signaling(pc, websocket))
+    await consume_signaling(pc, websocket)
 
     return web.Response(
         content_type="application/json",

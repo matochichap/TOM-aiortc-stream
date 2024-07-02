@@ -42,7 +42,7 @@ async def handle_connection(websocket, path):
         try:
             print("Waiting for message...")
             message = await websocket.recv()
-            print(f'Received: {message}')
+            print(f'Received from {usertype}: {message}')
             if is_unity_user:
                 # Send to web users
                 for ws in map_web_users.values():

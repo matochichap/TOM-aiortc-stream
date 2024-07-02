@@ -60,27 +60,26 @@ def force_codec(pc, sender, forced_codec):
 
 
 async def consume_signaling(pc, websocket):
-    while True:
-        message = await websocket.recv()
-        print("Received:", message)
-        sdp_type, sdp = message.split("~")[:2]
-        if sdp_type == "offer":
-            offer = RTCSessionDescription(sdp=sdp, type=sdp_type)
-            await pc.setRemoteDescription(offer)
-            answer = await pc.createAnswer()
-            await pc.setLocalDescription(answer)
-            answer = answer.type + "~" + answer.sdp
-            await websocket.send(answer)
-        elif sdp_type == "answer":
-            sdp = RTCSessionDescription(sdp=sdp, type=sdp_type)
-            await pc.setRemoteDescription(sdp)
-        elif sdp_type == "candidate":
-            sdp_type, candidate, sdp_mid, sdp_mline_index = message.split("~")
-            foundation, component, protocol, priority, ip, port, _, _type = candidate.split()[
-                :8]
-            candidate = RTCIceCandidate(foundation=foundation, component=component, protocol=protocol,
-                                        priority=priority, ip=ip, port=port, type=_type, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
-            await pc.addIceCandidate(candidate)
+    message = await websocket.recv()
+    print("Received:", message)
+    sdp_type, sdp = message.split("~")[:2]
+    if sdp_type == "offer":
+        offer = RTCSessionDescription(sdp=sdp, type=sdp_type)
+        await pc.setRemoteDescription(offer)
+        answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+        answer = answer.type + "~" + answer.sdp
+        await websocket.send(answer)
+    elif sdp_type == "answer":
+        sdp = RTCSessionDescription(sdp=sdp, type=sdp_type)
+        await pc.setRemoteDescription(sdp)
+    elif sdp_type == "candidate":
+        sdp_type, candidate, sdp_mid, sdp_mline_index = message.split("~")
+        foundation, component, protocol, priority, ip, port, _, _type = candidate.split()[
+            :8]
+        candidate = RTCIceCandidate(foundation=foundation, component=component, protocol=protocol,
+                                    priority=priority, ip=ip, port=port, type=_type, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
+        await pc.addIceCandidate(candidate)
 
 async def index(request):
     global websocket
@@ -166,7 +165,8 @@ async def offer(request):
     offer = pc.localDescription.type + "~" + pc.localDescription.sdp
     await websocket.send(offer)
 
-    await consume_signaling(pc, websocket)
+    asyncio.create_task(consume_signaling(pc, websocket))
+    # await consume_signaling(pc, websocket)
 
     return web.Response(
         content_type="application/json",
@@ -215,7 +215,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    # print(args)
+    print(args)
 
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)

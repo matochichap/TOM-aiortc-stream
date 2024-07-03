@@ -8,6 +8,7 @@ from aiortc.rtcrtpsender import RTCRtpSender
 
 WEBSOCKET_URI = "ws://127.0.0.1:5011/ws?type=w&uid=1&token=1234567890"
 
+
 class AiortcServer:
     def __init__(self, websocket_uri):
         self.pc = RTCPeerConnection(
@@ -23,12 +24,10 @@ class AiortcServer:
         self.relay = None
         self.webcam = None
 
-
     async def connect_to_websocket(self):
         self.websocket = await websockets.connect(self.websocket_uri)
         print("Connected to websocket server")
         asyncio.create_task(self.consume_signaling())
-    
 
     async def consume_signaling(self):
         message = await self.websocket.recv()
@@ -52,7 +51,6 @@ class AiortcServer:
                                         priority=priority, ip=ip, port=port, type=_type, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
             await self.pc.addIceCandidate(candidate)
 
-
     def get_media(self, audio_codec=None, video_codec=None, play_without_decoding=False, play_from=None):
         def create_local_tracks(play_from, decode):
             if play_from:
@@ -60,7 +58,7 @@ class AiortcServer:
                 return player.audio, player.video
             else:
                 options = {"framerate": "30",
-                        "video_size": "640x480"}
+                           "video_size": "640x480"}
                 if self.relay is None:
                     if platform.system() == "Darwin":
                         self.webcam = MediaPlayer(
@@ -69,21 +67,23 @@ class AiortcServer:
                     elif platform.system() == "Windows":
                         # video_src = "FHD Webcam"
                         video_src = "Webcam"
+                        audio_src = "Microphone (Webcam)"
+                        # video_src = "GlideX SharedCam"
                         options["pixel_format"] = "yuyv422"
                         self.webcam = MediaPlayer(
-                            f"video={video_src}", format="dshow", options=options
+                            f"video={video_src}:audio={audio_src}", format="dshow", options=options
                         )
                     else:
                         self.webcam = MediaPlayer(
                             "/dev/video0", format="v4l2", options=options)
                     self.relay = MediaRelay()
-                return None, self.relay.subscribe(self.webcam.video)
-
+                return self.relay.subscribe(self.webcam.audio), self.relay.subscribe(self.webcam.video)
 
         def force_codec(pc, sender, forced_codec):
             kind = forced_codec.split("/")[0]
             codecs = RTCRtpSender.getCapabilities(kind).codecs
-            transceiver = next(t for t in pc.getTransceivers() if t.sender == sender)
+            transceiver = next(t for t in pc.getTransceivers()
+                               if t.sender == sender)
             transceiver.setCodecPreferences(
                 [codec for codec in codecs if codec.mimeType == forced_codec]
             )
@@ -112,7 +112,6 @@ class AiortcServer:
                 raise Exception(
                     "You must specify the video codec using video_codec")
 
-
     async def create_offer(self):
         await self.connect_to_websocket()
         offer = await self.pc.createOffer()
@@ -123,13 +122,15 @@ class AiortcServer:
 
 shutdown_event = asyncio.Event()
 
+
 async def main():
     server = AiortcServer(WEBSOCKET_URI)
     # server.get_media(play_from="./big_buck_bunny_720p_1mb.mp4")
+    # server.get_media(audio_codec="opus/48000/2", video_codec="H264/90000")
     server.get_media()
     await server.create_offer()
     logging.basicConfig(level=logging.INFO)
-    
+
     try:
         await shutdown_event.wait()
     except asyncio.CancelledError:

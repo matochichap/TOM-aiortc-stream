@@ -2,6 +2,7 @@ import asyncio
 import logging
 import platform
 import websockets
+import time
 from aiortc import RTCPeerConnection, RTCConfiguration, RTCIceServer, RTCSessionDescription, RTCIceCandidate
 from aiortc.contrib.media import MediaPlayer, MediaRelay
 from aiortc.rtcrtpsender import RTCRtpSender
@@ -126,7 +127,46 @@ class AiortcServer:
                 raise Exception(
                     "You must specify the video codec using video_codec")
 
+    # TODO: test this function
+    def create_data_channel(self):
+        channel = self.pc.createDataChannel("chat")
+        
+        time_start = None
+        def current_stamp():
+            global time_start
+
+            if time_start is None:
+                time_start = time.time()
+                return 0
+            else:
+                return int((time.time() - time_start) * 1000000)
+
+        def channel_log(channel, t, message):
+            print("channel(%s) %s %s" % (channel.label, t, message))
+        
+        def channel_send(channel, message):
+            channel_log(channel, ">", message)
+            channel.send(message)
+        
+        async def send_pings():
+            while True:
+                channel_send(channel, "ping %d" % current_stamp())
+                await asyncio.sleep(1)
+
+        @channel.on("open")
+        def on_open():
+            asyncio.ensure_future(send_pings())
+
+        @channel.on("message")
+        def on_message(message):
+            channel_log(channel, "<", message)
+
+            if isinstance(message, str) and message.startswith("pong"):
+                elapsed_ms = (current_stamp() - int(message[5:])) / 1000
+                print(" RTT %.2f ms" % elapsed_ms)
+
     async def create_offer(self):
+        self.create_data_channel()
         await self.connect_to_websocket()
         offer = await self.pc.createOffer()
         await self.pc.setLocalDescription(offer)

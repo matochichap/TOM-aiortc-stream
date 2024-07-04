@@ -10,7 +10,7 @@ IP_ADDRESS = {
     "localhost": "127.0.0.1",
     "Innovation 4": "192.168.68.56",
     "NUS_STU": "10.249.218.176",
-    "Galaxy S21 Ultra": "192.168.224.2",
+    "Galaxy S21 Ultra": "192.168.224.2", # need to update after every hotspot restart
     "SSI Windows PC": "192.168.137.147" # doesn't work, uses IP of wifi
 }
 

@@ -2,7 +2,7 @@ import asyncio
 import websockets
 from urllib.parse import urlparse, parse_qs
 
-IP_ADDRESS = "127.0.0.1"
+IP_ADDRESS = "0.0.0.0"
 PORT = 5011
 
 map_unity_users = {}

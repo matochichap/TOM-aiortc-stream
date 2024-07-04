@@ -6,7 +6,15 @@ from aiortc import RTCPeerConnection, RTCConfiguration, RTCIceServer, RTCSession
 from aiortc.contrib.media import MediaPlayer, MediaRelay
 from aiortc.rtcrtpsender import RTCRtpSender
 
-WEBSOCKET_URI = "ws://127.0.0.1:5011/ws?type=w&uid=1&token=1234567890"
+IP_ADDRESS = {
+    "localhost": "127.0.0.1",
+    "Innovation 4": "192.168.68.56",
+    "NUS_STU": "10.249.218.176",
+    "Galaxy S21 Ultra": "192.168.224.2",
+    "SSI Windows PC": "192.168.137.147" # doesn't work, uses IP of wifi
+}
+
+WEBSOCKET_URI = f"ws://{IP_ADDRESS['Galaxy S21 Ultra']}:5011/ws?type=w&uid=1&token=1234567890"
 
 
 class AiortcServer:
@@ -22,7 +30,7 @@ class AiortcServer:
         )
         self.websocket_uri = websocket_uri
         self.relay = None
-        self.webcam = None
+        self.media_player = None
 
     async def connect_to_websocket(self):
         self.websocket = await websockets.connect(self.websocket_uri)
@@ -51,33 +59,39 @@ class AiortcServer:
                                         priority=priority, ip=ip, port=port, type=_type, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
             await self.pc.addIceCandidate(candidate)
 
-    def get_media(self, audio_codec=None, video_codec=None, play_without_decoding=False, play_from=None):
+    def get_media(self, audio_src="Microphone (Realtek(R) Audio)", video_src="FHD Webcam", audio_codec=None, video_codec=None, play_without_decoding=False, play_from=None):
         def create_local_tracks(play_from, decode):
             if play_from:
-                player = MediaPlayer(play_from, decode=decode)
+                player = MediaPlayer(play_from, decode=decode, loop=True)
                 return player.audio, player.video
             else:
                 options = {"framerate": "30",
                            "video_size": "640x480"}
                 if self.relay is None:
                     if platform.system() == "Darwin":
-                        self.webcam = MediaPlayer(
+                        self.media_player = MediaPlayer(
                             "default:none", format="avfoundation", options=options
                         )
                     elif platform.system() == "Windows":
-                        # video_src = "FHD Webcam"
-                        video_src = "Webcam"
-                        audio_src = "Microphone (Webcam)"
-                        # video_src = "GlideX SharedCam"
+                        file = ""
+                        if audio_src:
+                            file += f"audio={audio_src}:"
+                        if video_src:
+                            file += f"video={video_src}:"
                         options["pixel_format"] = "yuyv422"
-                        self.webcam = MediaPlayer(
-                            f"video={video_src}:audio={audio_src}", format="dshow", options=options
+                        self.media_player = MediaPlayer(
+                            file=file[:-1], format="dshow", options=options
                         )
                     else:
-                        self.webcam = MediaPlayer(
+                        self.media_player = MediaPlayer(
                             "/dev/video0", format="v4l2", options=options)
                     self.relay = MediaRelay()
-                return self.relay.subscribe(self.webcam.audio), self.relay.subscribe(self.webcam.video)
+                media = [None, None]
+                if audio_src:
+                    media[0] = self.relay.subscribe(self.media_player.audio)
+                if video_src:
+                    media[1] = self.relay.subscribe(self.media_player.video)
+                return media
 
         def force_codec(pc, sender, forced_codec):
             kind = forced_codec.split("/")[0]
@@ -126,7 +140,6 @@ shutdown_event = asyncio.Event()
 async def main():
     server = AiortcServer(WEBSOCKET_URI)
     # server.get_media(play_from="./big_buck_bunny_720p_1mb.mp4")
-    # server.get_media(audio_codec="opus/48000/2", video_codec="H264/90000")
     server.get_media()
     await server.create_offer()
     logging.basicConfig(level=logging.INFO)

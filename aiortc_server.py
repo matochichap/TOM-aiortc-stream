@@ -2,24 +2,14 @@ import asyncio
 import logging
 import platform
 import websockets
-import time
 from aiortc import RTCPeerConnection, RTCConfiguration, RTCIceServer, RTCSessionDescription, RTCIceCandidate
 from aiortc.contrib.media import MediaPlayer, MediaRelay
 from aiortc.rtcrtpsender import RTCRtpSender
-
-IP_ADDRESS = {
-    "localhost": "127.0.0.1",
-    "Innovation 4": "192.168.68.56",
-    "NUS_STU": "10.249.218.176",
-    "Galaxy S21 Ultra": "192.168.224.2", # need to update after every hotspot restart
-    "SSI Windows PC": "192.168.137.147" # doesn't work, uses IP of wifi
-}
-
-WEBSOCKET_URI = f"ws://{IP_ADDRESS['Galaxy S21 Ultra']}:5011/ws?type=w&uid=1&token=1234567890"
+from constants import IP_ADDRESS
 
 
 class AiortcServer:
-    def __init__(self, websocket_uri):
+    def __init__(self, ip):
         self.pc = RTCPeerConnection(
             configuration=RTCConfiguration(
                 iceServers=[
@@ -29,7 +19,8 @@ class AiortcServer:
                 ]
             )
         )
-        self.websocket_uri = websocket_uri
+        self.dc = None
+        self.websocket_uri = f"ws://{ip}:5011/ws?type=w&uid=1&token=1234567890"
         self.relay = None
         self.media_player = None
 
@@ -60,7 +51,7 @@ class AiortcServer:
                                         priority=priority, ip=ip, port=port, type=_type, sdpMid=sdp_mid, sdpMLineIndex=sdp_mline_index)
             await self.pc.addIceCandidate(candidate)
 
-    def get_media(self, audio_src="Microphone (Realtek(R) Audio)", video_src="FHD Webcam", audio_codec=None, video_codec=None, play_without_decoding=False, play_from=None):
+    def get_media(self, audio_src=None, video_src=None, audio_codec=None, video_codec=None, play_without_decoding=False, play_from=None):
         def create_local_tracks(play_from, decode):
             if play_from:
                 player = MediaPlayer(play_from, decode=decode, loop=True)
@@ -127,46 +118,28 @@ class AiortcServer:
                 raise Exception(
                     "You must specify the video codec using video_codec")
 
-    # TODO: test this function
     def create_data_channel(self):
-        channel = self.pc.createDataChannel("chat")
-        
-        time_start = None
-        def current_stamp():
-            global time_start
+        dc = self.pc.createDataChannel("chat")
 
-            if time_start is None:
-                time_start = time.time()
-                return 0
-            else:
-                return int((time.time() - time_start) * 1000000)
-
-        def channel_log(channel, t, message):
-            print("channel(%s) %s %s" % (channel.label, t, message))
-        
-        def channel_send(channel, message):
-            channel_log(channel, ">", message)
-            channel.send(message)
-        
         async def send_pings():
             while True:
-                channel_send(channel, "ping %d" % current_stamp())
-                await asyncio.sleep(1)
+                dc.send("ping")
+                print(">>> ping")
+                await asyncio.sleep(5)
 
-        @channel.on("open")
+        @dc.on("open")
         def on_open():
             asyncio.ensure_future(send_pings())
 
-        @channel.on("message")
+        @dc.on("message")
         def on_message(message):
-            channel_log(channel, "<", message)
-
-            if isinstance(message, str) and message.startswith("pong"):
-                elapsed_ms = (current_stamp() - int(message[5:])) / 1000
-                print(" RTT %.2f ms" % elapsed_ms)
+            # convert bytes to string
+            message = message.decode("utf-8")
+            print("<<< " + message)
+        return dc
 
     async def create_offer(self):
-        self.create_data_channel()
+        # self.dc = self.create_data_channel()
         await self.connect_to_websocket()
         offer = await self.pc.createOffer()
         await self.pc.setLocalDescription(offer)
@@ -178,9 +151,12 @@ shutdown_event = asyncio.Event()
 
 
 async def main():
-    server = AiortcServer(WEBSOCKET_URI)
+    server = AiortcServer(IP_ADDRESS["localhost"])
     # server.get_media(play_from="./big_buck_bunny_720p_1mb.mp4")
-    server.get_media()
+    # server.get_media(audio_src="Microphone (Realtek(R) Audio)",
+    #                  video_src="FHD Webcam")
+    server.get_media(
+        audio_src="Microphone Array (Realtek(R) Audio)", video_src="Webcam")
     await server.create_offer()
     logging.basicConfig(level=logging.INFO)
 

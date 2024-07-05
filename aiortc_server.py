@@ -121,15 +121,15 @@ class AiortcServer:
     def create_data_channel(self):
         dc = self.pc.createDataChannel("chat")
 
-        async def send_pings():
-            while True:
-                dc.send("ping")
-                print(">>> ping")
-                await asyncio.sleep(5)
+        # async def send_pings():
+        #     while True:
+        #         dc.send("ping")
+        #         print(">>> ping")
+        #         await asyncio.sleep(5)
 
-        @dc.on("open")
-        def on_open():
-            asyncio.ensure_future(send_pings())
+        # @dc.on("open")
+        # def on_open():
+        #     asyncio.ensure_future(send_pings())
 
         @dc.on("message")
         def on_message(message):
@@ -139,7 +139,7 @@ class AiortcServer:
         return dc
 
     async def create_offer(self):
-        # self.dc = self.create_data_channel()
+        self.dc = self.create_data_channel()
         await self.connect_to_websocket()
         offer = await self.pc.createOffer()
         await self.pc.setLocalDescription(offer)
@@ -153,10 +153,10 @@ shutdown_event = asyncio.Event()
 async def main():
     server = AiortcServer(IP_ADDRESS["localhost"])
     # server.get_media(play_from="./big_buck_bunny_720p_1mb.mp4")
-    # server.get_media(audio_src="Microphone (Realtek(R) Audio)",
-    #                  video_src="FHD Webcam")
-    server.get_media(
-        audio_src="Microphone Array (Realtek(R) Audio)", video_src="Webcam")
+    server.get_media(audio_src="Microphone (Realtek(R) Audio)",
+                     video_src="FHD Webcam")
+    # server.get_media(audio_src="Microphone Array (Realtek(R) Audio)",
+    #                  video_src="Webcam")
     await server.create_offer()
     logging.basicConfig(level=logging.INFO)
 

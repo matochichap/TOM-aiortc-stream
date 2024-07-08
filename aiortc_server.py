@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import platform
+import re
+import subprocess
 import websockets
 from aiortc import RTCPeerConnection, RTCConfiguration, RTCIceServer, RTCSessionDescription, RTCIceCandidate
 from aiortc.contrib.media import MediaPlayer, MediaRelay
@@ -52,6 +54,30 @@ class AiortcServer:
             await self.pc.addIceCandidate(candidate)
 
     def get_media(self, audio_src=None, video_src=None, audio_codec=None, video_codec=None, play_without_decoding=False, play_from=None):
+        def get_devices():
+            def list_video_devices():
+                result = subprocess.run(
+                    "ffmpeg -list_devices true -f dshow -i dummy".split(),
+                    capture_output=True,
+                    text=True)
+                output = result.stderr
+                return output
+
+            def extract_device_names(output):
+                pattern = r'"([^"]+)"\s+\((video|audio)\)'
+                matches = re.findall(pattern, output)
+                return matches
+
+            devices = {"video": [], "audio": []}
+            try:
+                names = extract_device_names(list_video_devices())
+            except FileNotFoundError:
+                print("ffmpeg not found. Please install ffmpeg.")
+                return devices
+            for name, media in names:
+                devices[media].append(name)
+            return devices
+        
         def create_local_tracks(play_from, decode):
             if play_from:
                 player = MediaPlayer(play_from, decode=decode, loop=True)
@@ -65,7 +91,12 @@ class AiortcServer:
                             "default:none", format="avfoundation", options=options
                         )
                     elif platform.system() == "Windows":
+                        # devices = get_devices()
                         file = ""
+                        # for video in devices["video"]:
+                        #     file += f"video={video}"
+                        #     for audio in devices["audio"]:
+                        #         file += f":audio={audio}"
                         if audio_src:
                             file += f"audio={audio_src}:"
                         if video_src:
@@ -153,10 +184,10 @@ shutdown_event = asyncio.Event()
 async def main():
     server = AiortcServer(IP_ADDRESS["localhost"])
     # server.get_media(play_from="./big_buck_bunny_720p_1mb.mp4")
-    # server.get_media(audio_src="Microphone (Realtek(R) Audio)",
-    #                  video_src="FHD Webcam")
-    server.get_media(audio_src="Microphone Array (Realtek(R) Audio)",
-                     video_src="Webcam")
+    server.get_media(audio_src="Microphone (Realtek(R) Audio)",
+                     video_src="FHD Webcam")
+    # server.get_media(audio_src="Microphone Array (Realtek(R) Audio)",
+    #                  video_src="Webcam")
     await server.create_offer()
     logging.basicConfig(level=logging.INFO)
 

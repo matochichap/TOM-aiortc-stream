@@ -17,7 +17,12 @@ def get_devices():
         return matches
 
     devices = {"video": [], "audio": []}
-    for name, media in extract_device_names(list_video_devices()):
+    try:
+        names = extract_device_names(list_video_devices())
+    except FileNotFoundError:
+        print("ffmpeg not found. Please install ffmpeg.")
+        return devices
+    for name, media in names:
         devices[media].append(name)
     return devices
 

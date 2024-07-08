@@ -153,10 +153,10 @@ shutdown_event = asyncio.Event()
 async def main():
     server = AiortcServer(IP_ADDRESS["localhost"])
     # server.get_media(play_from="./big_buck_bunny_720p_1mb.mp4")
-    server.get_media(audio_src="Microphone (Realtek(R) Audio)",
-                     video_src="FHD Webcam")
-    # server.get_media(audio_src="Microphone Array (Realtek(R) Audio)",
-    #                  video_src="Webcam")
+    # server.get_media(audio_src="Microphone (Realtek(R) Audio)",
+    #                  video_src="FHD Webcam")
+    server.get_media(audio_src="Microphone Array (Realtek(R) Audio)",
+                     video_src="Webcam")
     await server.create_offer()
     logging.basicConfig(level=logging.INFO)
 

@@ -1,6 +1,4 @@
 const form = document.getElementById('textForm');
-const connectBtn = document.getElementById('connect');
-const disconnectBtn = document.getElementById('disconnect');
 const callBtn = document.getElementById('call');
 const hangupBtn = document.getElementById('hangup');
 
@@ -16,24 +14,6 @@ form.addEventListener('submit', async function(event) {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({ message: message }),
-    });
-});
-
-connectBtn.addEventListener('click', async function() {
-    await fetch('/connect', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-    });
-});
-
-disconnectBtn.addEventListener('click', async function() {
-    await fetch('/disconnect', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
     });
 });
 

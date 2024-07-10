@@ -19,12 +19,15 @@ class AiortcServer:
         self._signaling = None
         self._websocket = None
         self._websocket_uri = f"ws://{ip}:5011/ws?type=w&uid=1&token=1234567890"
-        self.websocket_state = "DISCONNECTED"
 
     async def _consume_signaling(self):
         message = await self._websocket.recv()
         logging.info("Received:", message)
         sdp_type, sdp = message.split("~")[:2]
+        if sdp_type == "pcnull":
+            await self.hangup()
+            logging.info("Remote PC is null. Hanging up...")
+            return
         if sdp_type == "offer":
             offer = RTCSessionDescription(sdp=sdp, type=sdp_type)
             await self._pc.setRemoteDescription(offer)
@@ -44,20 +47,28 @@ class AiortcServer:
             await self._pc.addIceCandidate(candidate)
 
     async def connect_to_websocket(self):
+        if self._websocket:
+            await self.disconnect_from_websocket()
         self._websocket = await websockets.connect(self._websocket_uri)
-        self._signaling = asyncio.create_task(self._consume_signaling())
-        self.websocket_state = "CONNECTED"
         logging.info("Connected to websocket server")
 
     async def disconnect_from_websocket(self):
         if self._websocket:
             await self._websocket.close()
+        self._websocket = None
+        logging.info("Disconnected from websocket server")
+
+    def start_signaling(self):
         if self._signaling:
             self._signaling.cancel()
-        self._websocket = None
-        self._signaling = None
-        self.websocket_state = "DISCONNECTED"
-        logging.info("Disconnected from websocket server")
+        self._signaling = asyncio.create_task(self._consume_signaling())
+        logging.info("Signaling started")
+
+    def stop_signaling(self):
+        if self._signaling:
+            self._signaling.cancel()
+            self._signaling = None
+        logging.info("Signaling stopped")
 
     def create_peer_connection(self):
         if self._pc:
@@ -135,7 +146,7 @@ class AiortcServer:
             for name, media in names:
                 devices[media].append(name)
             return devices
-        
+
         def create_local_tracks(play_from, decode):
             if play_from:
                 player = MediaPlayer(play_from, decode=decode, loop=True)
@@ -169,9 +180,11 @@ class AiortcServer:
                     self._relay = MediaRelay()
                 media = [None, None]
                 if audio_src:
-                    media[0] = self._relay.subscribe(self._media_player.audio, buffered=False)
+                    media[0] = self._relay.subscribe(
+                        self._media_player.audio, buffered=False)
                 if video_src:
-                    media[1] = self._relay.subscribe(self._media_player.video, buffered=False)
+                    media[1] = self._relay.subscribe(
+                        self._media_player.video, buffered=False)
                 return media
 
         def force_codec(pc, sender, forced_codec):
@@ -222,7 +235,8 @@ class AiortcServer:
             raise Exception("Websocket connection not created")
         offer = await self._pc.createOffer()
         await self._pc.setLocalDescription(offer)
-        offer_message = self._pc.localDescription.type + "~" + self._pc.localDescription.sdp
+        offer_message = self._pc.localDescription.type + \
+            "~" + self._pc.localDescription.sdp
         await self._websocket.send(offer_message)
         logging.info("Offer sent")
 
@@ -240,19 +254,9 @@ class AiortcServer:
             self._dc.close()
         self._pc = None
         self._dc = None
+        # self.stop_signaling()
         logging.info("Resources cleaned up")
 
-    def get_peer_connection_state(self):
-        return self._pc.connectionState
-
-    def get_signaling_state(self):
-        return self._pc.signalingState
-
-    def get_ice_connection_state(self):
-        return self._pc.iceConnectionState
-
-    def get_ice_gathering_state(self):
-        return self._pc.iceGatheringState
 
 shutdown_event = asyncio.Event()
 

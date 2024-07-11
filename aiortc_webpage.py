@@ -4,7 +4,7 @@ from aiortc_server import AiortcServer
 from aiohttp import web
 from constants import IP_ADDRESS
 
-HOST = IP_ADDRESS["localhost"]
+HOST = IP_ADDRESS["Galaxy S21 Ultra"]
 server = AiortcServer(HOST)
 
 
@@ -24,19 +24,16 @@ async def call(request):
     server.start_signaling()
     server.create_peer_connection()
     server.create_data_channel()
-    # server.get_media(audio_src="Microphone (Realtek(R) Audio)",
-    #                 video_src="FHD Webcam")
-    server.get_media(audio_src="Microphone Array (Realtek(R) Audio)",
-                     video_src="Webcam")
+    server.get_media(audio_src="Microphone (Realtek(R) Audio)",
+                    video_src="FHD Webcam")
+    # server.get_media(audio_src="Microphone Array (Realtek(R) Audio)",
+    #                  video_src="Webcam")
     await server.create_offer()
     return web.Response(text="ok")
 
 
 async def hangup(request):
     global server
-    if not server:
-        print("Server not started")
-        return web.Response(text="Server not started")
     server.stop_signaling()
     await server.hangup()
     await server.disconnect_from_websocket()
@@ -45,9 +42,6 @@ async def hangup(request):
 
 async def send_message(request):
     global server
-    if not server:
-        print("Server not started")
-        return web.Response(text="Server not started")
     data = await request.json()
     server.send_message(data["message"])
     return web.Response(text="ok")

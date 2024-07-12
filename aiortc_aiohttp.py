@@ -10,21 +10,18 @@ HOST = IP_ADDRESS["localhost"]
 connection = AiortcConnection(HOST)
 connection.create_peer_connection()
 connection.create_data_channel()
+is_calling = False
 
 
 async def index(request):
-    logging.info("index.html requested")
-    content = open("index.html", "r").read()
-    return web.Response(content_type="text/html", text=content)
-
-
-async def javascript(request):
-    content = open("script.js", "r").read()
-    return web.Response(content_type="application/javascript", text=content)
+    return web.FileResponse("./static/index.html")
 
 
 async def call(request):
-    global connection
+    global connection, is_calling
+    if is_calling:
+        logging.info("Already calling")
+        return web.Response(text="Already calling")
     await connection.connect_to_websocket()
     connection.start_signaling()
     # NOTE: media should ideally be created with pc and dc,
@@ -33,32 +30,37 @@ async def call(request):
     # TODO: can find a way to silence ffmpeg logs
     connection.get_media()
     await connection.send_offer()
+    is_calling = True
     return web.Response(text="ok")
 
 
 async def hangup(request):
-    global connection
+    global connection, is_calling
     connection.stop_signaling()
     await connection.disconnect_from_websocket()
     # clear pc, dc, media, restart pc, dc
     await connection.clear()
     connection.create_peer_connection()
     connection.create_data_channel()
+    is_calling = False
     return web.Response(text="ok")
 
 
 async def send_message(request):
     global connection
     data = await request.json()
-    connection.send_message(data["message"])
+    try:
+        connection.send_message(data["message"])
+    except Exception as e:
+        logging.error(f"Send message via data channel error: {e}")
     return web.Response(text="ok")
 
 
 if __name__ == "__main__":
     try:
         app = web.Application()
+        app.router.add_static("/static", "./static")
         app.router.add_get("/", index)
-        app.router.add_get("/script.js", javascript)
         app.router.add_post("/send_message", send_message)
         app.router.add_post("/call", call)
         app.router.add_post("/hangup", hangup)

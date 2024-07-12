@@ -147,7 +147,7 @@ class AiortcServer:
                 devices[media].append(name)
             return devices
 
-        def create_local_tracks(play_from, decode):
+        def create_local_tracks(play_from, decode, audio_src, video_src):
             if play_from:
                 player = MediaPlayer(play_from, decode=decode, loop=True)
                 return player.audio, player.video
@@ -160,12 +160,18 @@ class AiortcServer:
                             "default:none", format="avfoundation", options=options
                         )
                     elif platform.system() == "Windows":
-                        # devices = get_devices()
+                        # get first audio and video devices if not specified
+                        if not audio_src and not video_src:
+                            devices = get_devices()
+                            if devices["audio"]:
+                                audio_src = devices["audio"][0]
+                            if devices["video"]:
+                                video_src = devices["video"][0]
+                            logging.info(
+                                "No audio or video device specified using the first available devices")
+                            logging.info(
+                                f"Audio device: {audio_src}, Video device: {video_src}")
                         file = ""
-                        # for video in devices["video"]:
-                        #     file += f"video={video}"
-                        #     for audio in devices["audio"]:
-                        #         file += f":audio={audio}"
                         if audio_src:
                             file += f"audio={audio_src}:"
                         if video_src:
@@ -207,7 +213,7 @@ class AiortcServer:
 
         # open media source
         audio, video = create_local_tracks(
-            play_from, decode=not play_without_decoding
+            play_from, decode=not play_without_decoding, audio_src=audio_src, video_src=video_src
         )
 
         if audio:

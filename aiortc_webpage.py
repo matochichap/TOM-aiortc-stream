@@ -4,7 +4,7 @@ from aiortc_server import AiortcServer
 from aiohttp import web
 from constants import IP_ADDRESS
 
-HOST = IP_ADDRESS["Galaxy S21 Ultra"]
+HOST = IP_ADDRESS["localhost"]
 server = AiortcServer(HOST)
 
 
@@ -24,10 +24,7 @@ async def call(request):
     server.start_signaling()
     server.create_peer_connection()
     server.create_data_channel()
-    server.get_media(audio_src="Microphone (Realtek(R) Audio)",
-                    video_src="FHD Webcam")
-    # server.get_media(audio_src="Microphone Array (Realtek(R) Audio)",
-    #                  video_src="Webcam")
+    server.get_media()
     await server.create_offer()
     return web.Response(text="ok")
 

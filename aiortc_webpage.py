@@ -1,14 +1,19 @@
 import asyncio
 import logging
-from aiortc_server import AiortcServer
+from aiortc_connection import AiortcConnection
 from aiohttp import web
 from constants import IP_ADDRESS
 
+logging.basicConfig(level=logging.INFO)
+
 HOST = IP_ADDRESS["localhost"]
-server = AiortcServer(HOST)
+connection = AiortcConnection(HOST)
+connection.create_peer_connection()
+connection.create_data_channel()
 
 
 async def index(request):
+    logging.info("index.html requested")
     content = open("index.html", "r").read()
     return web.Response(content_type="text/html", text=content)
 
@@ -19,34 +24,38 @@ async def javascript(request):
 
 
 async def call(request):
-    global server
-    await server.connect_to_websocket()
-    server.start_signaling()
-    server.create_peer_connection()
-    server.create_data_channel()
-    server.get_media()
-    await server.create_offer()
+    global connection
+    await connection.connect_to_websocket()
+    connection.start_signaling()
+    # NOTE: media should ideally be created with pc and dc,
+    # but due to frame drop error from ffmpeg spamming logs,
+    # media is created when call is made
+    # TODO: can find a way to silence ffmpeg logs
+    connection.get_media()
+    await connection.send_offer()
     return web.Response(text="ok")
 
 
 async def hangup(request):
-    global server
-    server.stop_signaling()
-    await server.hangup()
-    await server.disconnect_from_websocket()
+    global connection
+    connection.stop_signaling()
+    await connection.disconnect_from_websocket()
+    # clear pc, dc, media, restart pc, dc
+    await connection.clear()
+    connection.create_peer_connection()
+    connection.create_data_channel()
     return web.Response(text="ok")
 
 
 async def send_message(request):
-    global server
+    global connection
     data = await request.json()
-    server.send_message(data["message"])
+    connection.send_message(data["message"])
     return web.Response(text="ok")
 
 
 if __name__ == "__main__":
     try:
-        logging.basicConfig(level=logging.INFO)
         app = web.Application()
         app.router.add_get("/", index)
         app.router.add_get("/script.js", javascript)
@@ -55,4 +64,4 @@ if __name__ == "__main__":
         app.router.add_post("/hangup", hangup)
         web.run_app(app, host=HOST, port=5000)
     except KeyboardInterrupt:
-        asyncio.run(server.hangup())
+        asyncio.run(connection.clear())

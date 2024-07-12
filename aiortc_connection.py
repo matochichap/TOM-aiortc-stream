@@ -10,7 +10,7 @@ from aiortc.rtcrtpsender import RTCRtpSender
 from constants import IP_ADDRESS
 
 
-class AiortcServer:
+class AiortcConnection:
     def __init__(self, ip):
         self._pc = None
         self._dc = None
@@ -24,8 +24,9 @@ class AiortcServer:
         message = await self._websocket.recv()
         logging.info("Received:", message)
         sdp_type, sdp = message.split("~")[:2]
+        # TODO: Not needed after fixing Unity client
         if sdp_type == "pcnull":
-            await self.hangup()
+            await self.clear()
             logging.info("Remote PC is null. Hanging up...")
             return
         if sdp_type == "offer":
@@ -47,6 +48,7 @@ class AiortcServer:
             await self._pc.addIceCandidate(candidate)
 
     async def connect_to_websocket(self):
+        # if websocket is already connected, restart it
         if self._websocket:
             await self.disconnect_from_websocket()
         self._websocket = await websockets.connect(self._websocket_uri)
@@ -59,6 +61,7 @@ class AiortcServer:
         logging.info("Disconnected from websocket server")
 
     def start_signaling(self):
+        # if signaling is already running, restart it
         if self._signaling:
             self._signaling.cancel()
         self._signaling = asyncio.create_task(self._consume_signaling())
@@ -67,12 +70,13 @@ class AiortcServer:
     def stop_signaling(self):
         if self._signaling:
             self._signaling.cancel()
-            self._signaling = None
+        self._signaling = None
         logging.info("Signaling stopped")
 
     def create_peer_connection(self):
         if self._pc:
-            raise Exception("Peer connection already created")
+            raise Exception(
+                "Peer connection already created. Clear it before creating a new one")
         self._pc = RTCPeerConnection(
             configuration=RTCConfiguration(
                 iceServers=[
@@ -86,7 +90,8 @@ class AiortcServer:
 
     def create_data_channel(self):
         if not self._pc:
-            raise Exception("Peer connection not created")
+            raise Exception(
+                "Peer connection not created. Cannot create data channel")
         self._dc = self._pc.createDataChannel("chat")
 
         @self._dc.on("message")
@@ -187,10 +192,10 @@ class AiortcServer:
                 media = [None, None]
                 if audio_src:
                     media[0] = self._relay.subscribe(
-                        self._media_player.audio, buffered=False)
+                        self._media_player.audio)
                 if video_src:
                     media[1] = self._relay.subscribe(
-                        self._media_player.video, buffered=False)
+                        self._media_player.video)
                 return media
 
         def force_codec(pc, sender, forced_codec):
@@ -203,7 +208,8 @@ class AiortcServer:
             )
 
         if not self._pc:
-            raise Exception("Peer connection not created")
+            raise Exception(
+                "Peer connection not created. Create it before adding media")
 
         self._pc.addTransceiver("audio")
         self._pc.addTransceiver("video")
@@ -233,12 +239,13 @@ class AiortcServer:
                     "You must specify the video codec using video_codec")
         logging.info("Media added")
 
-    async def create_offer(self):
+    async def send_offer(self):
         # NOTE: Call this after creating pc, dc and adding media
         if not self._pc:
-            raise Exception("Peer connection not created")
+            raise Exception("Peer connection not created. Cannot send offer")
         if not self._websocket:
-            raise Exception("Websocket connection not created")
+            raise Exception(
+                "Websocket connection not created. Cannot send offer")
         offer = await self._pc.createOffer()
         await self._pc.setLocalDescription(offer)
         offer_message = self._pc.localDescription.type + \
@@ -248,11 +255,11 @@ class AiortcServer:
 
     def send_message(self, message):
         if not self._dc:
-            raise Exception("Data channel not created")
+            raise Exception("Data channel not created. Cannot send message")
         self._dc.send(message)
         logging.info(">>> " + message)
 
-    async def hangup(self):
+    async def clear(self):
         self.clear_media()
         if self._pc:
             await self._pc.close()
@@ -260,7 +267,6 @@ class AiortcServer:
             self._dc.close()
         self._pc = None
         self._dc = None
-        # self.stop_signaling()
         logging.info("Resources cleaned up")
 
 
@@ -268,16 +274,15 @@ shutdown_event = asyncio.Event()
 
 
 async def main():
-    server = AiortcServer(IP_ADDRESS["localhost"])
-    await server.connect_to_websocket()
-    server.create_peer_connection()
-    server.create_data_channel()
-    # server.get_media(play_from="./big_buck_bunny_720p_1mb.mp4")
-    server.get_media(audio_src="Microphone (Realtek(R) Audio)",
-                     video_src="FHD Webcam")
-    # server.get_media(audio_src="Microphone Array (Realtek(R) Audio)",
-    #                  video_src="Webcam")
-    await server.create_offer()
+    # call
+    connection = AiortcConnection(IP_ADDRESS["localhost"])
+    await connection.connect_to_websocket()
+    connection.start_signaling()
+    connection.create_peer_connection()
+    connection.create_data_channel()
+    connection.get_media()
+    # connection.get_media(play_from="./big_buck_bunny_720p_1mb.mp4")
+    await connection.send_offer()
     logging.basicConfig(level=logging.info)
 
     try:
@@ -285,8 +290,10 @@ async def main():
     except asyncio.CancelledError:
         pass
     finally:
-        await server.hangup()
-        await server.disconnect_from_websocket()
+        # hangup
+        connection.stop_signaling()
+        await connection.clear()
+        await connection.disconnect_from_websocket()
 
 if __name__ == "__main__":
     try:

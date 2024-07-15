@@ -8,8 +8,6 @@ logging.basicConfig(level=logging.INFO)
 
 HOST = IP_ADDRESS["localhost"]
 connection = AiortcConnection(HOST)
-connection.create_peer_connection()
-connection.create_data_channel()
 is_calling = False
 
 
@@ -24,10 +22,8 @@ async def call(request):
         return web.Response(text="Already calling")
     await connection.connect_to_websocket()
     connection.start_signaling()
-    # NOTE: media should ideally be created with pc and dc,
-    # but due to frame drop error from ffmpeg spamming logs,
-    # media is created when call is made
-    # TODO: can find a way to silence ffmpeg logs
+    connection.create_peer_connection()
+    connection.create_data_channel()
     connection.get_media()
     await connection.send_offer()
     is_calling = True
@@ -38,10 +34,7 @@ async def hangup(request):
     global connection, is_calling
     connection.stop_signaling()
     await connection.disconnect_from_websocket()
-    # clear pc, dc, media, restart pc, dc
     await connection.clear()
-    connection.create_peer_connection()
-    connection.create_data_channel()
     is_calling = False
     return web.Response(text="ok")
 

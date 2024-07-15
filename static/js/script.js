@@ -18,6 +18,7 @@ form.addEventListener('submit', async function(event) {
 });
 
 callBtn.addEventListener('click', async function() {
+    callBtn.disabled = true;
     await fetch('/call', {
         method: 'POST',
         headers: {
@@ -27,6 +28,7 @@ callBtn.addEventListener('click', async function() {
 });
 
 hangupBtn.addEventListener('click', async function() {
+    callBtn.disabled = false;
     await fetch('/hangup', {
         method: 'POST',
         headers: {

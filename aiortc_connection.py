@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import platform
 import re
 import subprocess
@@ -8,17 +9,20 @@ from aiortc import RTCPeerConnection, RTCConfiguration, RTCIceServer, RTCSession
 from aiortc.contrib.media import MediaPlayer, MediaRelay
 from aiortc.rtcrtpsender import RTCRtpSender
 from constants import IP_ADDRESS
+from dotenv import load_dotenv
 
+load_dotenv()
 
 class AiortcConnection:
-    def __init__(self, ip):
+    def __init__(self, ip=""):
         self._pc = None
         self._dc = None
         self._relay = None
         self._media_player = None
         self._signaling = None
         self._websocket = None
-        self._websocket_uri = f"ws://{ip}:5011/ws?type=w&uid=1&token=1234567890"
+        # self._websocket_uri = f"ws://{ip}:5011/ws?type=w&uid=1&token=1234567890"
+        self._websocket_uri = "wss://tom-bridge.nusssi.com/wsbridge/?type=w&uid=1&token=1234567890"
 
     async def _consume_signaling(self):
         message = await self._websocket.recv()
@@ -81,7 +85,10 @@ class AiortcConnection:
             configuration=RTCConfiguration(
                 iceServers=[
                     RTCIceServer(
-                        urls=["stun:stun.l.google.com:19302"]
+                        # TODO: set as env variable
+                        urls=[os.getenv("TURN_SERVER")],
+                        username=os.getenv("TURN_SERVER_USERNAME"),
+                        credential=os.getenv("TURN_SERVER_CREDENTIAL")
                     )
                 ]
             )
@@ -275,7 +282,8 @@ shutdown_event = asyncio.Event()
 
 async def main():
     # call
-    connection = AiortcConnection(IP_ADDRESS["localhost"])
+    # connection = AiortcConnection(IP_ADDRESS["localhost"])
+    connection = AiortcConnection()
     await connection.connect_to_websocket()
     connection.start_signaling()
     connection.create_peer_connection()

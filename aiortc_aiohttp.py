@@ -7,6 +7,7 @@ from constants import IP_ADDRESS
 logging.basicConfig(level=logging.INFO)
 
 HOST = IP_ADDRESS["localhost"]
+# connection = AiortcConnection(HOST)
 connection = AiortcConnection()
 is_calling = False
 

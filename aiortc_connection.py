@@ -86,6 +86,7 @@ class AiortcConnection:
                 iceServers=[
                     RTCIceServer(
                         # TODO: set as env variable
+                        # urls=["stun:stun.l.google.com:19302"],
                         urls=[os.getenv("TURN_SERVER")],
                         username=os.getenv("TURN_SERVER_USERNAME"),
                         credential=os.getenv("TURN_SERVER_CREDENTIAL")
